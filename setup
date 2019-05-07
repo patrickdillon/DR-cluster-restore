@@ -1,0 +1,24 @@
+BASTION_HOST=$(oc get service -n openshift-ssh-bastion ssh-bastion -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+FIRST_MASTER=$(oc get node -l node-role.kubernetes.io/master= -o name | head -n1 | cut -d '/' -f 2)
+mapfile -t MASTERS < <(oc get node -l node-role.kubernetes.io/master= -o name | cut -d '/' -f 2)
+
+function bastion_ssh() {
+  while true
+  do
+    ssh -o LogLevel=error -o ConnectionAttempts=100 -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o ProxyCommand="ssh -A -o StrictHostKeyChecking=no -o LogLevel=error -o ServerAliveInterval=30 -o ConnectionAttempts=100 -o ConnectTimeout=5 -W %h:%p core@${BASTION_HOST}" $@ && break
+    sleep 10
+  done
+}
+
+function bastion_scp() {
+  while true
+  do
+    scp -o StrictHostKeyChecking=no -o ProxyCommand="ssh -A -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -W %h:%p core@${BASTION_HOST}" $1 $2 && break
+    sleep 10
+  done
+}
+
+function wait_for_machineconfigpool_to_apply() {
+    for i in $(seq 0 10); do oc wait machineconfigpool/master --for=condition=Updating --timeout=5m && break; done
+    for i in $(seq 0 10); do oc wait machineconfigpool/master --for=condition=Updated --timeout=5m && break; sleep 30; done
+  }
